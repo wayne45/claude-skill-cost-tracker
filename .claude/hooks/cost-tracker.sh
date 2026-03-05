@@ -48,17 +48,53 @@ mkdir -p "$COST_DATA_DIR"
 
 # --- Parse transcript and aggregate token usage by model ---
 
-# Extract all assistant messages with usage data, aggregate by model
-# Uses jq -R -c to handle malformed lines gracefully (skip unparseable lines with warning)
-MODEL_USAGE=$(jq -R -c 'try fromjson catch empty' "$TRANSCRIPT_PATH" 2>/dev/null | jq -s '
-  [.[] | select(.type == "assistant" and .message.usage != null)] |
-  group_by(.message.model) |
+# Helper: extract deduped usage from a transcript file.
+# The transcript records each content block (text, thinking, tool_use) from the
+# same API call as a separate assistant message with identical usage data.
+# To avoid double-counting, we keep only the LAST assistant message in each
+# consecutive chain (which carries the final cumulative usage for that API call).
+extract_usage() {
+  local file="$1"
+  jq -s '
+    # Tag each entry with type and usage info
+    [range(length) as $i | {
+      type: .[$i].type,
+      model: .[$i].message.model,
+      usage: .[$i].message.usage,
+      next_type: (.[$i+1].type // "none")
+    }] |
+    # Keep only the last assistant in each consecutive chain (one per API call)
+    [.[] | select(
+      .type == "assistant" and
+      (.usage | type) == "object" and
+      (.next_type | . == "assistant" | not)
+    ) | {model, usage}]
+  ' "$file" 2>/dev/null || echo '[]'
+}
+
+# Collect usage from main transcript
+ALL_USAGE=$(extract_usage "$TRANSCRIPT_PATH")
+
+# Include subagent transcripts if present
+TRANSCRIPT_DIR="$(dirname "$TRANSCRIPT_PATH")"
+SESSION_DIR="$TRANSCRIPT_DIR/$SESSION_ID"
+if [ -d "$SESSION_DIR/subagents" ]; then
+  for sub_file in "$SESSION_DIR"/subagents/*.jsonl; do
+    [ -f "$sub_file" ] || continue
+    SUB_USAGE=$(extract_usage "$sub_file")
+    ALL_USAGE=$(echo "$ALL_USAGE" "$SUB_USAGE" | jq -s 'add')
+  done
+fi
+
+# Aggregate by model
+MODEL_USAGE=$(echo "$ALL_USAGE" | jq '
+  group_by(.model) |
   map({
-    model: .[0].message.model,
-    input_tokens: (map(.message.usage.input_tokens // 0) | add),
-    output_tokens: (map(.message.usage.output_tokens // 0) | add),
-    cache_read_tokens: (map(.message.usage.cache_read_input_tokens // 0) | add),
-    cache_write_tokens: (map(.message.usage.cache_creation_input_tokens // 0) | add)
+    model: .[0].model,
+    input_tokens: ([.[].usage.input_tokens // 0] | add),
+    output_tokens: ([.[].usage.output_tokens // 0] | add),
+    cache_read_tokens: ([.[].usage.cache_read_input_tokens // 0] | add),
+    cache_write_tokens: ([.[].usage.cache_creation_input_tokens // 0] | add)
   })
 ') || {
   echo "cost-tracker: failed to parse transcript" >&2
@@ -127,25 +163,17 @@ API_DURATION_MS=$(jq -R -c 'try fromjson catch empty' "$TRANSCRIPT_PATH" 2>/dev/
 
 # --- Track code changes ---
 
-# Count lines added/removed from Edit and Write tool results in transcript
-CODE_CHANGES=$(jq -R -c 'try fromjson catch empty' "$TRANSCRIPT_PATH" 2>/dev/null | jq -s '
-  def count_changes:
-    [.[] | select(.type == "assistant" and .message.content != null) |
-     .message.content[] |
-     select(.type == "tool_result" or .type == "tool_use") |
-     .text // .content // "" |
-     if type == "string" then . else "" end
-    ] |
-    join("\n") |
-    {
-      lines_added: (split("\n") | map(select(startswith("+"))) | length),
-      lines_removed: (split("\n") | map(select(startswith("-"))) | length)
-    };
-  count_changes
-') || CODE_CHANGES='{"lines_added":0,"lines_removed":0}'
-
-LINES_ADDED=$(echo "$CODE_CHANGES" | jq '.lines_added // 0')
-LINES_REMOVED=$(echo "$CODE_CHANGES" | jq '.lines_removed // 0')
+# Use git diff --stat for accurate line counts (tracks uncommitted changes)
+if command -v git &>/dev/null && git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
+  DIFF_STAT=$(git -C "$PROJECT_DIR" diff --stat HEAD 2>/dev/null | tail -1)
+  LINES_ADDED=$(echo "$DIFF_STAT" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo 0)
+  LINES_REMOVED=$(echo "$DIFF_STAT" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo 0)
+  [ -z "$LINES_ADDED" ] && LINES_ADDED=0
+  [ -z "$LINES_REMOVED" ] && LINES_REMOVED=0
+else
+  LINES_ADDED=0
+  LINES_REMOVED=0
+fi
 
 # --- Assemble and write cost record ---
 
