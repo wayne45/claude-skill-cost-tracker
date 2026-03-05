@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "updated": "2026-03-05",
+  "models": [
+    {
+      "model_pattern": "claude-opus-4-6",
+      "input_per_mtok": 5.00,
+      "output_per_mtok": 25.00,
+      "cache_read_per_mtok": 0.50,
+      "cache_write_per_mtok": 6.25
+    },
+    {
+      "model_pattern": "claude-sonnet-4-6",
+      "input_per_mtok": 3.00,
+      "output_per_mtok": 15.00,
+      "cache_read_per_mtok": 0.30,
+      "cache_write_per_mtok": 3.75
+    },
+    {
+      "model_pattern": "claude-opus-4-5",
+      "input_per_mtok": 5.00,
+      "output_per_mtok": 25.00,
+      "cache_read_per_mtok": 0.50,
+      "cache_write_per_mtok": 6.25
+    },
+    {
+      "model_pattern": "claude-haiku-4-5",
+      "input_per_mtok": 1.00,
+      "output_per_mtok": 5.00,
+      "cache_read_per_mtok": 0.10,
+      "cache_write_per_mtok": 1.25
+    },
+    {
+      "model_pattern": "claude-sonnet-4-5",
+      "input_per_mtok": 3.00,
+      "output_per_mtok": 15.00,
+      "cache_read_per_mtok": 0.30,
+      "cache_write_per_mtok": 3.75
+    },
+    {
+      "model_pattern": "claude-sonnet-4",
+      "input_per_mtok": 3.00,
+      "output_per_mtok": 15.00,
+      "cache_read_per_mtok": 0.30,
+      "cache_write_per_mtok": 3.75
+    }
+  ],
+  "fallback_formula": {
+    "cache_read_ratio": 0.10,
+    "cache_write_ratio": 0.25,
+    "note": "For unknown models: cache_read = input_price * 0.10, cache_write = input_price * 0.25"
+  }
+}
