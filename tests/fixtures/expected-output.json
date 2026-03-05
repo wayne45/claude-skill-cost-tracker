@@ -1,0 +1,26 @@
+{
+  "session_id": "test-session-001",
+  "session_start": "2026-03-05T09:00:00.000Z",
+  "session_end": "2026-03-05T09:02:10.000Z",
+  "wall_duration_ms": 130000,
+  "total_cost_usd_approx": 0.3474,
+  "models": [
+    {
+      "model": "claude-opus-4-6-20260301",
+      "input_tokens": 3500,
+      "output_tokens": 1300,
+      "cache_read_tokens": 110000,
+      "cache_write_tokens": 8000,
+      "cost_usd_approx": 0.345
+    },
+    {
+      "model": "claude-haiku-4-5-20251001",
+      "input_tokens": 800,
+      "output_tokens": 200,
+      "cache_read_tokens": 10000,
+      "cache_write_tokens": 1000,
+      "cost_usd_approx": 0.00244
+    }
+  ],
+  "notes": "Approximate values. Costs rounded to 6 decimal places in actual output."
+}
