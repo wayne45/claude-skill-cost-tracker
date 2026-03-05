@@ -11,7 +11,7 @@
 
 As a Claude Code user, I want costs to be automatically tracked after each conversation session so that I can understand how much each interaction costs without any manual effort.
 
-When a conversation ends, the system automatically captures the model used, input tokens, output tokens, and calculated cost, then stores this data persistently within the project. The cost data accumulates across all conversations in the same Claude Code project.
+When a conversation ends, the system automatically captures the full session data — including models used, token counts (input, output, cache read, cache write), durations (API time and wall time), code changes (lines added/removed), and calculated cost — then stores this data persistently within the project. The cost data accumulates across all conversations in the same Claude Code project.
 
 **Why this priority**: Without automatic cost capture, there is no data to report on. This is the foundational capability that everything else depends on.
 
@@ -19,9 +19,9 @@ When a conversation ends, the system automatically captures the model used, inpu
 
 **Acceptance Scenarios**:
 
-1. **Given** a Claude Code project with the cost tracker installed, **When** a conversation session completes, **Then** the system records the model name, input token count, output token count, calculated cost, and timestamp.
+1. **Given** a Claude Code project with the cost tracker installed, **When** a conversation session completes, **Then** the system records: total cost, API duration, wall duration, code changes (lines added/removed), timestamp, and per-model token breakdown (input, output, cache read, cache write, and per-model cost).
 2. **Given** a Claude Code project with existing cost records, **When** a new conversation session completes, **Then** the new cost record is appended to the existing data without overwriting previous records.
-3. **Given** a conversation that uses multiple models (e.g., Opus and Haiku via subagents), **When** the session completes, **Then** the system records usage for each distinct model separately.
+3. **Given** a conversation that uses multiple models (e.g., Opus and Haiku via subagents), **When** the session completes, **Then** the system records each model's token usage separately (input, output, cache read, cache write) with per-model cost.
 
 ---
 
@@ -37,7 +37,7 @@ The user triggers a report command and receives a formatted summary showing tota
 
 **Acceptance Scenarios**:
 
-1. **Given** a project with accumulated cost data from multiple conversations, **When** the user requests a cost report, **Then** the system displays a summary in the conversation (total cost, per-model breakdown, session count) and saves a detailed markdown report file to the project directory.
+1. **Given** a project with accumulated cost data from multiple conversations, **When** the user requests a cost report, **Then** the system displays a summary in the conversation (total cost, total API duration, total wall duration, total code changes, per-model token and cost breakdown, session count) and saves a detailed markdown report file to the project directory.
 2. **Given** a project with cost data spanning multiple days, **When** the user requests a cost report, **Then** the detailed report file includes a time-based breakdown (daily and session-level).
 3. **Given** a project with no cost data, **When** the user requests a cost report, **Then** the system displays a clear message indicating no cost data has been recorded yet (no file is generated).
 4. **Given** a generated report file already exists, **When** the user requests a new cost report, **Then** the previous report file is overwritten with the latest data.
@@ -54,8 +54,8 @@ As a Claude Code user, I want to see the cost of my current or most recent conve
 
 **Acceptance Scenarios**:
 
-1. **Given** a completed conversation session with cost data, **When** the user requests the current session cost, **Then** the system displays the model used, input tokens, output tokens, and calculated cost for that session.
-2. **Given** multiple models were used in a single session, **When** the user requests the current session cost, **Then** the breakdown shows each model's contribution separately along with a session total.
+1. **Given** a completed conversation session with cost data, **When** the user requests the current session cost, **Then** the system displays: total cost, API duration, wall duration, code changes, and per-model token breakdown (input, output, cache read, cache write, per-model cost).
+2. **Given** multiple models were used in a single session, **When** the user requests the current session cost, **Then** the breakdown shows each model's contribution separately (input, output, cache read, cache write, cost) along with a session total.
 
 ---
 
@@ -87,25 +87,25 @@ As a Claude Code user, I want to reset or clear the accumulated cost data so tha
 
 ### Functional Requirements
 
-- **FR-001**: System MUST automatically capture cost data (model name, input tokens, output tokens, calculated cost, timestamp) at the end of each Claude Code conversation session via a Claude Code hook, using hook event data as the primary source and local session file parsing as a fallback.
+- **FR-001**: System MUST automatically capture cost data at the end of each Claude Code conversation session via a Claude Code hook, using hook event data as the primary source and local session file parsing as a fallback. Captured data per session MUST include: total cost, API duration, wall duration, code changes (lines added, lines removed), timestamp, and per-model token breakdown (input tokens, output tokens, cache read tokens, cache write tokens, per-model cost).
 - **FR-002**: System MUST persist cost data within the project directory so that it accumulates across conversations and is available for reporting.
 - **FR-003**: System MUST support tracking costs for all Claude model variants (Opus, Sonnet, Haiku, and future models).
-- **FR-004**: System MUST calculate costs using accurate per-model pricing for input and output tokens.
+- **FR-004**: System MUST calculate costs using accurate per-model pricing for input tokens, output tokens, cache read tokens, and cache write tokens.
 - **FR-005**: System MUST provide a slash command (skill) to generate a cost summary report, displaying a summary in the conversation and saving a detailed report as a markdown file in the project directory.
-- **FR-006**: Cost reports MUST include: total cost, total input tokens, total output tokens, per-model breakdown, and number of sessions tracked.
+- **FR-006**: Cost reports MUST include: total cost, total API duration, total wall duration, total code changes (lines added/removed), total input tokens, total output tokens, total cache read tokens, total cache write tokens, per-model breakdown, and number of sessions tracked.
 - **FR-007**: Cost reports MUST include a time-based breakdown showing costs per day or per session.
 - **FR-013**: The conversation summary MUST include key totals and per-model breakdown. The saved report file MUST include full session-level detail.
 - **FR-008**: System MUST provide a slash command (skill) to view the cost of the most recent or current session.
 - **FR-009**: System MUST provide a slash command (skill) to reset/clear accumulated cost data, with confirmation required before deletion.
-- **FR-010**: System MUST handle cases where multiple models are used in a single session (e.g., via subagents) by recording each model's usage separately.
+- **FR-010**: System MUST handle cases where multiple models are used in a single session (e.g., via subagents) by recording each model's token usage separately (input, output, cache read, cache write) with per-model cost.
 - **FR-011**: System MUST gracefully handle corrupted or malformed cost data without crashing, displaying a warning and processing what it can.
 - **FR-012**: System MUST allow pricing information to be updated to accommodate new models or pricing changes without affecting historical records.
 
 ### Key Entities
 
-- **Cost Record**: A single unit of tracked usage data, including the model name, input token count, output token count, calculated cost (in USD), and timestamp of when the session occurred.
+- **Cost Record**: A single unit of tracked session data, including: total cost, API duration, wall duration, code changes (lines added, lines removed), timestamp, and a per-model breakdown. Each model entry includes: model name, input token count, output token count, cache read token count, cache write token count, and per-model cost.
 - **Cost Data Store**: The persistent collection of all cost records within a project. Organized to support querying by time period and model.
-- **Pricing Table**: A reference containing per-model token pricing (cost per input token, cost per output token) for all supported Claude models.
+- **Pricing Table**: A reference containing per-model token pricing (cost per input token, cost per output token, cost per cache read token, cost per cache write token) for all supported Claude models.
 - **Cost Report**: A formatted output summarizing cost records, with breakdowns by model, time period, and token type. Delivered in two forms: a concise summary displayed in the conversation, and a detailed markdown file saved to the project directory.
 
 ## Clarifications
@@ -115,6 +115,7 @@ As a Claude Code user, I want to reset or clear the accumulated cost data so tha
 - Q: What Claude Code extension mechanism should the cost tracker use? → A: Hooks for automatic capture + Slash commands (skills) for reporting and management.
 - Q: Where should the cost tracker read token usage data from? → A: Hook event data (stdin/env vars) as primary source, with filesystem parsing of Claude Code's local session files as fallback.
 - Q: How should cost reports be presented to the user? → A: Both - display a summary directly in the Claude Code conversation, and save a detailed report as a markdown file in the project directory.
+- Refinement: Cost data fields expanded based on Claude Code's actual `/cost` output. Per session: total cost, API duration, wall duration, code changes (lines added/removed). Per model: input tokens, output tokens, cache read tokens, cache write tokens, per-model cost.
 
 ## Constraints
 
