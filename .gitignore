@@ -1,0 +1,15 @@
+# IDE
+/.idea/
+.vscode/
+
+# Claude
+/.claude/
+
+# Specify
+/.specify/
+
+# macOS
+.DS_Store
+*.swp
+*.tmp
+Thumbs.db
