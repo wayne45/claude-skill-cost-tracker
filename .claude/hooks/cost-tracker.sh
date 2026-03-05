@@ -3,7 +3,7 @@
 # Parses session transcript to track token usage, durations, code changes, and costs.
 # Writes cost records to .claude/cost-data/sessions.jsonl
 
-set -euo pipefail
+set -uo pipefail
 
 # Determine project directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,10 +21,13 @@ fi
 # Read hook input from stdin
 INPUT=$(cat)
 
-# Extract fields from hook input
-STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+# Extract fields from hook input (single jq parse)
+_parsed=$(echo "$INPUT" | jq -r '
+  [(.stop_hook_active // false | tostring), (.session_id // ""), (.transcript_path // "")] | @tsv
+')
+STOP_HOOK_ACTIVE=$(printf '%s' "$_parsed" | cut -f1)
+SESSION_ID=$(printf '%s' "$_parsed" | cut -f2)
+TRANSCRIPT_PATH=$(printf '%s' "$_parsed" | cut -f3)
 
 # Guard: prevent infinite loops
 if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
@@ -35,6 +38,12 @@ fi
 if [ -z "$SESSION_ID" ] || [ -z "$TRANSCRIPT_PATH" ]; then
   echo "cost-tracker: missing session_id or transcript_path in hook input" >&2
   exit 1
+fi
+
+# Validate session_id is a UUID (prevent path traversal)
+if ! [[ "$SESSION_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+  echo "cost-tracker: invalid session_id format: $SESSION_ID" >&2
+  exit 0
 fi
 
 # Validate transcript file exists
@@ -55,35 +64,87 @@ mkdir -p "$COST_DATA_DIR"
 # consecutive chain (which carries the final cumulative usage for that API call).
 extract_usage() {
   local file="$1"
-  jq -s '
-    # Tag each entry with type and usage info
+  jq -R -c 'try fromjson catch empty' "$file" 2>/dev/null | jq -s '
     [range(length) as $i | {
       type: .[$i].type,
       model: .[$i].message.model,
       usage: .[$i].message.usage,
       next_type: (.[$i+1].type // "none")
     }] |
-    # Keep only the last assistant in each consecutive chain (one per API call)
     [.[] | select(
       .type == "assistant" and
       (.usage | type) == "object" and
       (.next_type | . == "assistant" | not)
     ) | {model, usage}]
-  ' "$file" 2>/dev/null || echo '[]'
+  ' 2>/dev/null || echo '[]'
 }
 
-# Collect usage from main transcript
-ALL_USAGE=$(extract_usage "$TRANSCRIPT_PATH")
+# --- Single-pass parse of main transcript ---
+# Extracts usage, timestamps, and durations in one jq pipeline (resilient to malformed lines)
+MAIN_PARSE=$(jq -R -c 'try fromjson catch empty' "$TRANSCRIPT_PATH" 2>/dev/null | jq -s '
+  def to_epoch_ms:
+    (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) * 1000 +
+    (if test("\\.[0-9]+Z$") then
+      (capture("\\.(?<f>[0-9]+)Z$").f + "000" | .[0:3] | tonumber)
+    else 0 end);
 
-# Include subagent transcripts if present
+  [range(length) as $i | {
+    type: .[$i].type,
+    model: .[$i].message.model,
+    usage: .[$i].message.usage,
+    timestamp: .[$i].timestamp,
+    next_type: (.[$i+1].type // "none")
+  }] as $entries |
+
+  {
+    usage: [$entries[] | select(
+      .type == "assistant" and
+      (.usage | type) == "object" and
+      (.next_type == "assistant" | not)
+    ) | {model, usage}],
+
+    session_start: ([$entries[] | select(.timestamp != null) | .timestamp] | sort | .[0] // ""),
+    session_end: ([$entries[] | select(.timestamp != null) | .timestamp] | sort | .[-1] // ""),
+
+    wall_duration_ms: (
+      [$entries[] | select(.timestamp != null) | .timestamp] | sort |
+      if length >= 2 then ((.[-1] | to_epoch_ms) - (.[0] | to_epoch_ms))
+      else 0 end
+    ),
+
+    api_duration_ms: (
+      [$entries, $entries[1:]] | transpose |
+      map(select(
+        .[0].type == "user" and .[1].type == "assistant" and
+        .[0].timestamp != null and .[1].timestamp != null
+      )) |
+      map(((.[1].timestamp | to_epoch_ms) - (.[0].timestamp | to_epoch_ms))) |
+      add // 0
+    )
+  }
+') || {
+  echo "cost-tracker: failed to parse transcript" >&2
+  exit 1
+}
+
+ALL_USAGE=$(echo "$MAIN_PARSE" | jq '.usage')
+SESSION_START=$(echo "$MAIN_PARSE" | jq -r '.session_start')
+SESSION_END=$(echo "$MAIN_PARSE" | jq -r '.session_end')
+WALL_DURATION_MS=$(echo "$MAIN_PARSE" | jq '.wall_duration_ms')
+API_DURATION_MS=$(echo "$MAIN_PARSE" | jq '.api_duration_ms')
+
+# Include subagent transcripts if present (single merge instead of O(n) merges)
 TRANSCRIPT_DIR="$(dirname "$TRANSCRIPT_PATH")"
 SESSION_DIR="$TRANSCRIPT_DIR/$SESSION_ID"
 if [ -d "$SESSION_DIR/subagents" ]; then
+  SUB_USAGES=()
   for sub_file in "$SESSION_DIR"/subagents/*.jsonl; do
     [ -f "$sub_file" ] || continue
-    SUB_USAGE=$(extract_usage "$sub_file")
-    ALL_USAGE=$(echo "$ALL_USAGE" "$SUB_USAGE" | jq -s 'add')
+    SUB_USAGES+=("$(extract_usage "$sub_file")")
   done
+  if [ ${#SUB_USAGES[@]} -gt 0 ]; then
+    ALL_USAGE=$(printf '%s\n' "$ALL_USAGE" "${SUB_USAGES[@]}" | jq -s 'add')
+  fi
 fi
 
 # Aggregate by model
@@ -97,7 +158,7 @@ MODEL_USAGE=$(echo "$ALL_USAGE" | jq '
     cache_write_tokens: ([.[].usage.cache_creation_input_tokens // 0] | add)
   })
 ') || {
-  echo "cost-tracker: failed to parse transcript" >&2
+  echo "cost-tracker: failed to aggregate usage" >&2
   exit 1
 }
 
@@ -111,10 +172,12 @@ else
   PRICING='{"models":[],"fallback_formula":{"cache_read_ratio":0.10,"cache_write_ratio":0.25}}'
 fi
 
-# Calculate per-model costs using pricing lookup with prefix matching
+# Calculate per-model costs using longest-prefix match on pricing patterns
 MODEL_USAGE_WITH_COST=$(echo "$MODEL_USAGE" | jq --argjson pricing "$PRICING" '
   map(. as $usage |
-    ($pricing.models | map(select(.model_pattern as $pat | $usage.model | startswith($pat))) | .[0] // null) as $price |
+    ($pricing.models
+     | map(select(.model_pattern as $pat | $usage.model | startswith($pat)))
+     | sort_by(.model_pattern | length) | reverse | .[0] // null) as $price |
     if $price then
       . + {cost_usd: ((
         ($usage.input_tokens * $price.input_per_mtok / 1000000) +
@@ -128,38 +191,15 @@ MODEL_USAGE_WITH_COST=$(echo "$MODEL_USAGE" | jq --argjson pricing "$PRICING" '
   )
 ')
 
-TOTAL_COST=$(echo "$MODEL_USAGE_WITH_COST" | jq '[.[].cost_usd] | add // 0 | . * 1000000 | round | . / 1000000')
-
-# --- Calculate durations ---
-
-# Get all message timestamps sorted (resilient to malformed lines)
-TIMESTAMPS=$(jq -R -c 'try fromjson catch empty' "$TRANSCRIPT_PATH" 2>/dev/null | jq -s '
-  [.[] | select(.timestamp != null) | .timestamp] | sort
+# Warn about models missing from pricing configuration
+UNMATCHED=$(echo "$MODEL_USAGE_WITH_COST" | jq -r '
+  [.[] | select(.cost_usd == 0 and (.input_tokens + .output_tokens) > 0) | .model] | .[]
 ')
-
-SESSION_START=$(echo "$TIMESTAMPS" | jq -r '.[0] // empty')
-SESSION_END=$(echo "$TIMESTAMPS" | jq -r '.[-1] // empty')
-
-# Calculate wall duration in milliseconds
-if [ -n "$SESSION_START" ] && [ -n "$SESSION_END" ]; then
-  # Use jq for ISO 8601 date math (portable)
-  WALL_DURATION_MS=$(jq -n --arg start "$SESSION_START" --arg end "$SESSION_END" '
-    (($end | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) -
-     ($start | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601)) * 1000
-  ' 2>/dev/null) || WALL_DURATION_MS=0
-else
-  WALL_DURATION_MS=0
+if [ -n "$UNMATCHED" ]; then
+  echo "cost-tracker: no pricing for model(s): $UNMATCHED — add to pricing.json" >&2
 fi
 
-# Calculate API duration: sum of time between user messages and their assistant responses
-API_DURATION_MS=$(jq -R -c 'try fromjson catch empty' "$TRANSCRIPT_PATH" 2>/dev/null | jq -s '
-  [., .[1:]] | transpose |
-  map(select(.[0].type == "user" and .[1].type == "assistant" and .[0].timestamp != null and .[1].timestamp != null)) |
-  map(
-    ((.[1].timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) -
-     (.[0].timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601)) * 1000
-  ) | add // 0
-') || API_DURATION_MS=0
+TOTAL_COST=$(echo "$MODEL_USAGE_WITH_COST" | jq '[.[].cost_usd] | add // 0 | . * 1000000 | round | . / 1000000')
 
 # --- Track code changes ---
 
@@ -203,7 +243,26 @@ COST_RECORD=$(jq -cn \
     models: $models
   }')
 
-# Atomic append (single line write)
-printf '%s\n' "$COST_RECORD" >> "$SESSIONS_FILE"
+# Atomic upsert: replace previous record for this session_id, write atomically
+LOCKDIR="$SESSIONS_FILE.lock"
+if mkdir "$LOCKDIR" 2>/dev/null; then
+  trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT
+  TEMP_FILE="$SESSIONS_FILE.tmp.$$"
+  if [ -f "$SESSIONS_FILE" ]; then
+    # Keep all records except previous entries for this session
+    jq -R -c --arg sid "$SESSION_ID" \
+      'try (fromjson | select(.session_id != $sid)) catch empty' \
+      "$SESSIONS_FILE" > "$TEMP_FILE" 2>/dev/null || true
+  else
+    : > "$TEMP_FILE"
+  fi
+  printf '%s\n' "$COST_RECORD" >> "$TEMP_FILE"
+  mv -f "$TEMP_FILE" "$SESSIONS_FILE"
+  rmdir "$LOCKDIR" 2>/dev/null || true
+  trap - EXIT
+else
+  # Lock contention: fall back to append (consumers still handle dedup)
+  printf '%s\n' "$COST_RECORD" >> "$SESSIONS_FILE"
+fi
 
 exit 0
