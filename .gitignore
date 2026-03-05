@@ -2,8 +2,11 @@
 /.idea/
 .vscode/
 
-# Claude
-/.claude/
+# Claude (local settings and runtime data)
+/.claude/settings.local.json
+/.claude/cost-data/sessions.jsonl
+/.claude/cost-data/report.md
+/.claude/commands/speckit.*
 
 # Specify
 /.specify/

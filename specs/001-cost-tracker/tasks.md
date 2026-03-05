@@ -19,9 +19,9 @@
 
 **Purpose**: Create directory structure, pricing data, and hook configuration
 
-- [ ] T001 Create directory structure: `.claude/hooks/`, `.claude/commands/`, `.claude/cost-data/`, `tests/fixtures/`
-- [ ] T002 [P] Create pricing configuration with Opus/Sonnet/Haiku rates and fallback formula in `.claude/cost-data/pricing.json` per data-model.md pricing.json spec
-- [ ] T003 [P] Add Stop hook configuration to `.claude/settings.local.json` per hook-contract.md settings schema, merging with any existing content
+- [x] T001 Create directory structure: `.claude/hooks/`, `.claude/commands/`, `.claude/cost-data/`, `tests/fixtures/`
+- [x] T002 [P] Create pricing configuration with Opus/Sonnet/Haiku rates and fallback formula in `.claude/cost-data/pricing.json` per data-model.md pricing.json spec
+- [x] T003 [P] Add Stop hook configuration to `.claude/settings.local.json` per hook-contract.md settings schema, merging with any existing content
 
 ---
 
@@ -33,13 +33,13 @@
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] Create hook script skeleton in `.claude/hooks/cost-tracker.sh`: read JSON from stdin, extract `session_id`/`transcript_path`/`stop_hook_active`, validate `jq` is available, exit early if `stop_hook_active` is true, make file executable
-- [ ] T005 [US1] Implement transcript JSONL parsing in `.claude/hooks/cost-tracker.sh`: read transcript file line by line, filter for `type: "assistant"` messages, extract `message.model` and `message.usage` fields (input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens), aggregate totals per model using jq
-- [ ] T006 [US1] Implement pricing lookup and cost calculation in `.claude/hooks/cost-tracker.sh`: read `.claude/cost-data/pricing.json`, match model names by prefix against `model_pattern`, calculate per-model cost as `(input * input_per_mtok + output * output_per_mtok + cache_read * cache_read_per_mtok + cache_write * cache_write_per_mtok) / 1000000`, sum for total cost, use fallback formula for unknown models with warning to stderr
-- [ ] T007 [US1] Implement duration calculation in `.claude/hooks/cost-tracker.sh`: extract first and last message timestamps from transcript for wall duration, calculate API duration by summing time deltas between consecutive user→assistant message pairs, output as milliseconds
-- [ ] T008 [US1] Implement code change tracking in `.claude/hooks/cost-tracker.sh`: scan transcript for tool_use entries with `Edit`/`Write` tools, count lines added/removed from tool results (count `+` and `-` prefixed lines in diffs, count total lines for new file writes), default to 0 if no code changes detected
-- [ ] T009 [US1] Implement cost record assembly and JSONL append in `.claude/hooks/cost-tracker.sh`: build JSON object matching Cost Record schema from data-model.md (session_id, timestamp, session_start, session_end, api_duration_ms, wall_duration_ms, lines_added, lines_removed, total_cost_usd, models array), append single line to `.claude/cost-data/sessions.jsonl`, create cost-data directory if missing
-- [ ] T010 [US1] Create sample transcript fixture in `tests/fixtures/sample-transcript.jsonl` with realistic multi-model session data (Opus + Haiku messages with usage fields) and expected output in `tests/fixtures/expected-output.json`, validate hook produces correct output by running: `echo '{"session_id":"test-123","transcript_path":"tests/fixtures/sample-transcript.jsonl","stop_hook_active":false}' | .claude/hooks/cost-tracker.sh`
+- [x] T004 [US1] Create hook script skeleton in `.claude/hooks/cost-tracker.sh`: read JSON from stdin, extract `session_id`/`transcript_path`/`stop_hook_active`, validate `jq` is available, exit early if `stop_hook_active` is true, make file executable
+- [x] T005 [US1] Implement transcript JSONL parsing in `.claude/hooks/cost-tracker.sh`: read transcript file line by line, filter for `type: "assistant"` messages, extract `message.model` and `message.usage` fields (input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens), aggregate totals per model using jq
+- [x] T006 [US1] Implement pricing lookup and cost calculation in `.claude/hooks/cost-tracker.sh`: read `.claude/cost-data/pricing.json`, match model names by prefix against `model_pattern`, calculate per-model cost as `(input * input_per_mtok + output * output_per_mtok + cache_read * cache_read_per_mtok + cache_write * cache_write_per_mtok) / 1000000`, sum for total cost, use fallback formula for unknown models with warning to stderr
+- [x] T007 [US1] Implement duration calculation in `.claude/hooks/cost-tracker.sh`: extract first and last message timestamps from transcript for wall duration, calculate API duration by summing time deltas between consecutive user→assistant message pairs, output as milliseconds
+- [x] T008 [US1] Implement code change tracking in `.claude/hooks/cost-tracker.sh`: scan transcript for tool_use entries with `Edit`/`Write` tools, count lines added/removed from tool results (count `+` and `-` prefixed lines in diffs, count total lines for new file writes), default to 0 if no code changes detected
+- [x] T009 [US1] Implement cost record assembly and JSONL append in `.claude/hooks/cost-tracker.sh`: build JSON object matching Cost Record schema from data-model.md (session_id, timestamp, session_start, session_end, api_duration_ms, wall_duration_ms, lines_added, lines_removed, total_cost_usd, models array), append single line to `.claude/cost-data/sessions.jsonl`, create cost-data directory if missing
+- [x] T010 [US1] Create sample transcript fixture in `tests/fixtures/sample-transcript.jsonl` with realistic multi-model session data (Opus + Haiku messages with usage fields) and expected output in `tests/fixtures/expected-output.json`, validate hook produces correct output by running: `echo '{"session_id":"test-123","transcript_path":"tests/fixtures/sample-transcript.jsonl","stop_hook_active":false}' | .claude/hooks/cost-tracker.sh`
 
 **Checkpoint**: Hook fires on every Claude response and appends accurate cost records to sessions.jsonl. US1 is MVP-complete.
 
@@ -53,7 +53,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T011 [US2] Create `/cost-report` slash command in `.claude/commands/cost-report.md` with YAML frontmatter (name: cost-report, description), dynamic context injection using `!` backtick syntax to read `.claude/cost-data/sessions.jsonl` and `.claude/cost-data/pricing.json`, instructions for Claude to: deduplicate by session_id (latest wins), aggregate totals (cost, durations, code changes, tokens by type), format conversation summary per contracts/slash-commands.md report structure, write detailed report with daily and per-session tables to `.claude/cost-data/report.md`, handle empty data case with "No cost data recorded yet" message
+- [x] T011 [US2] Create `/cost-report` slash command in `.claude/commands/cost-report.md` with YAML frontmatter (name: cost-report, description), dynamic context injection using `!` backtick syntax to read `.claude/cost-data/sessions.jsonl` and `.claude/cost-data/pricing.json`, instructions for Claude to: deduplicate by session_id (latest wins), aggregate totals (cost, durations, code changes, tokens by type), format conversation summary per contracts/slash-commands.md report structure, write detailed report with daily and per-session tables to `.claude/cost-data/report.md`, handle empty data case with "No cost data recorded yet" message
 
 **Checkpoint**: `/cost-report` command available and produces accurate summary + file output.
 
@@ -67,7 +67,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T012 [US3] Create `/cost-session` slash command in `.claude/commands/cost-session.md` with YAML frontmatter (name: cost-session, description, argument-hint: [session-id]), dynamic context injection to read `.claude/cost-data/sessions.jsonl`, instructions for Claude to: if `$ARGUMENTS` provided find matching session_id, else use session with latest session_end, deduplicate by session_id, display formatted single-session breakdown per contracts/slash-commands.md display structure, handle empty data and session-not-found cases
+- [x] T012 [US3] Create `/cost-session` slash command in `.claude/commands/cost-session.md` with YAML frontmatter (name: cost-session, description, argument-hint: [session-id]), dynamic context injection to read `.claude/cost-data/sessions.jsonl`, instructions for Claude to: if `$ARGUMENTS` provided find matching session_id, else use session with latest session_end, deduplicate by session_id, display formatted single-session breakdown per contracts/slash-commands.md display structure, handle empty data and session-not-found cases
 
 **Checkpoint**: `/cost-session` command available, shows latest or specific session details.
 
@@ -81,7 +81,7 @@
 
 ### Implementation for User Story 4
 
-- [ ] T013 [US4] Create `/cost-reset` slash command in `.claude/commands/cost-reset.md` with YAML frontmatter (name: cost-reset, description, argument-hint: [confirm]), dynamic context injection to read session count from `.claude/cost-data/sessions.jsonl`, instructions for Claude to: if `$ARGUMENTS` does not contain "confirm" show data summary and ask user to run `/cost-reset confirm`, if "confirm" present then delete `.claude/cost-data/sessions.jsonl` and `.claude/cost-data/report.md` using Bash tool and display confirmation with count of sessions removed
+- [x] T013 [US4] Create `/cost-reset` slash command in `.claude/commands/cost-reset.md` with YAML frontmatter (name: cost-reset, description, argument-hint: [confirm]), dynamic context injection to read session count from `.claude/cost-data/sessions.jsonl`, instructions for Claude to: if `$ARGUMENTS` does not contain "confirm" show data summary and ask user to run `/cost-reset confirm`, if "confirm" present then delete `.claude/cost-data/sessions.jsonl` and `.claude/cost-data/report.md` using Bash tool and display confirmation with count of sessions removed
 
 **Checkpoint**: `/cost-reset` command available with two-step confirmation flow.
 
@@ -91,9 +91,9 @@
 
 **Purpose**: Error handling, edge cases, and validation
 
-- [ ] T014 Add malformed JSONL line handling in `.claude/hooks/cost-tracker.sh`: wrap transcript line parsing in error handling, skip unparseable lines with warning to stderr, continue processing remaining lines
-- [ ] T015 Add concurrent write safety in `.claude/hooks/cost-tracker.sh`: ensure JSONL append is atomic (single echo/printf with newline), verify cost-data directory exists before write
-- [ ] T016 Create validation test script in `tests/test-cost-tracker.sh`: run hook against sample fixture, compare output to expected-output.json, check exit codes, validate JSON structure of output record, report pass/fail
+- [x] T014 Add malformed JSONL line handling in `.claude/hooks/cost-tracker.sh`: wrap transcript line parsing in error handling, skip unparseable lines with warning to stderr, continue processing remaining lines
+- [x] T015 Add concurrent write safety in `.claude/hooks/cost-tracker.sh`: ensure JSONL append is atomic (single echo/printf with newline), verify cost-data directory exists before write
+- [x] T016 Create validation test script in `tests/test-cost-tracker.sh`: run hook against sample fixture, compare output to expected-output.json, check exit codes, validate JSON structure of output record, report pass/fail
 
 ---
 
