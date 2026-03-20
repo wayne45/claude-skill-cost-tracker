@@ -22,7 +22,7 @@ No API calls. No external services. Everything runs locally with `bash` + `jq`.
 From your project's root directory, run:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/wayne45/claude-skill-cost-tracker/main/src/install.sh | bash
+curl -sL https://raw.githubusercontent.com/wayne45/claude-skill-cost-tracker/refs/heads/main/src/install.sh | bash
 ```
 
 This single command installs the hook script, slash commands, pricing config, and configures `settings.local.json` — safely merging with any existing settings.
