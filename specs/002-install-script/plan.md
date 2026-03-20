@@ -44,12 +44,9 @@ specs/002-install-script/
 ```text
 src/
 └── install.sh           # Self-contained installer script (all heredocs embedded)
-
-tests/
-└── test-install.sh      # Integration tests for the installer
 ```
 
-**Structure Decision**: Single-file installer in `src/install.sh`. No library/service structure needed — this is a standalone script. Tests verify installation outcomes in isolated temp directories.
+**Structure Decision**: Single-file installer in `src/install.sh`. No library/service structure needed — this is a standalone script.
 
 ## Complexity Tracking
 

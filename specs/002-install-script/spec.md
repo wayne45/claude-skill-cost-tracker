@@ -73,7 +73,7 @@ As a developer, I want the install script to check that all prerequisites are me
 - **FR-003**: The installer MUST create all slash command files (`/cost-report`, `/cost-session`, `/cost-reset`).
 - **FR-004**: The installer MUST create the pricing configuration file with current model pricing.
 - **FR-005**: The installer MUST add the cost tracker hook configuration to `.claude/settings.local.json`, merging with existing content if the file already exists.
-- **FR-006**: The installer MUST validate that `jq` is installed before proceeding, and provide OS-specific installation instructions if missing.
+- **FR-006**: The installer MUST validate that `jq` is installed and Bash is 3.2+ before proceeding, and provide OS-specific installation instructions if missing.
 - **FR-007**: The installer MUST detect if the cost tracker is already installed. On reinstall, it MUST create `.bak` copies of existing files before overwriting them with updated versions.
 - **FR-008**: The installer MUST preserve all existing hooks, commands, and settings when merging into existing configuration files.
 - **FR-009**: The installer MUST display a summary of actions taken upon successful completion, including the list of files created/updated and next steps. Messaging must describe cost tracking as "zero-overhead data capture" (not "zero-cost"), since slash commands consume tokens.
@@ -91,11 +91,10 @@ As a developer, I want the install script to check that all prerequisites are me
 
 ## Assumptions
 
-- The install script is fully self-contained: all cost tracker files (hook script, slash commands, pricing config) are embedded in the script as heredocs. No additional network fetches are needed at install time.
+- The install script is fully self-contained: all cost tracker files (hook script, slash commands, pricing config) are embedded in the script as heredocs. No external dependencies beyond standard shell utilities and `jq` (which it validates). No additional network fetches are needed at install time.
 - The user runs the install command from the root of a directory that is or will become a Claude Code project.
-- The installer is a self-contained script with no external dependencies beyond standard shell utilities and `jq` (which it validates).
 - The install script is hosted in this repository and fetchable via a raw GitHub URL. Users install via `curl -sL <url> | bash` without needing to clone the repo.
-- The cost tracker feature (001-cost-tracker) is implemented and its source files are available for the installer to copy.
+- The cost tracker feature (001-cost-tracker) is implemented and its source files are available to embed in the installer.
 
 ## Success Criteria *(mandatory)*
 
