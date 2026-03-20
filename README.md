@@ -1,6 +1,6 @@
 # Claude Code Cost Tracker
 
-Automatic, zero-cost session cost tracking for Claude Code projects. Captures token usage, model breakdown, durations, and code changes after every conversation — then lets you query it with simple slash commands.
+Automatic session cost tracking with zero-overhead data capture for Claude Code projects. Captures token usage, model breakdown, durations, and code changes after every conversation — then lets you query it with simple slash commands.
 
 ## How It Works
 
@@ -19,48 +19,34 @@ No API calls. No external services. Everything runs locally with `bash` + `jq`.
 
 ## Installation
 
-1. Copy these files into your Claude Code project:
+From your project's root directory, run:
+
+```bash
+curl -sL https://raw.githubusercontent.com/wayne45/claude-skill-cost-tracker/main/src/install.sh | bash
+```
+
+This single command installs the hook script, slash commands, pricing config, and configures `settings.local.json` — safely merging with any existing settings.
+
+Restart Claude Code for hooks to take effect.
+
+### What Gets Installed
 
 ```
 .claude/
 ├── hooks/
-│   └── cost-tracker.sh          # Stop hook script
+│   └── cost-tracker.sh          # Stop hook script (executable)
 ├── commands/
 │   ├── cost-report.md           # /cost-report slash command
 │   ├── cost-session.md          # /cost-session slash command
 │   └── cost-reset.md            # /cost-reset slash command
-└── cost-data/
-    └── pricing.json             # Token pricing table
+├── cost-data/
+│   └── pricing.json             # Token pricing table
+└── settings.local.json          # Updated with hook registration
 ```
 
-2. Make the hook script executable:
+### Updating
 
-```bash
-chmod +x .claude/hooks/cost-tracker.sh
-```
-
-3. Add hook configuration to `.claude/settings.local.json`:
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cost-tracker.sh",
-            "timeout": 30000
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-4. Restart Claude Code for hooks to take effect.
+Re-run the install command to update. Existing files are backed up to `.bak` before overwriting. Your cost data is preserved.
 
 ## Usage
 
