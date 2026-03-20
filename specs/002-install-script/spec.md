@@ -68,23 +68,33 @@ As a developer, I want the install script to check that all prerequisites are me
 
 ### Functional Requirements
 
-- **FR-001**: The installer MUST be runnable as a single command from the project root directory.
+- **FR-001**: The installer MUST be runnable as a single remote command (`curl -sL <url> | bash`) from the project root directory, requiring no prior clone of the repository.
 - **FR-002**: The installer MUST create the hook script file and make it executable.
 - **FR-003**: The installer MUST create all slash command files (`/cost-report`, `/cost-session`, `/cost-reset`).
 - **FR-004**: The installer MUST create the pricing configuration file with current model pricing.
 - **FR-005**: The installer MUST add the cost tracker hook configuration to `.claude/settings.local.json`, merging with existing content if the file already exists.
 - **FR-006**: The installer MUST validate that `jq` is installed before proceeding, and provide OS-specific installation instructions if missing.
-- **FR-007**: The installer MUST detect if the cost tracker is already installed and offer to update/reinstall rather than duplicating.
+- **FR-007**: The installer MUST detect if the cost tracker is already installed. On reinstall, it MUST create `.bak` copies of existing files before overwriting them with updated versions.
 - **FR-008**: The installer MUST preserve all existing hooks, commands, and settings when merging into existing configuration files.
-- **FR-009**: The installer MUST display a summary of actions taken upon successful completion, including the list of files created/updated and next steps.
+- **FR-009**: The installer MUST display a summary of actions taken upon successful completion, including the list of files created/updated and next steps. Messaging must describe cost tracking as "zero-overhead data capture" (not "zero-cost"), since slash commands consume tokens.
 - **FR-010**: The installer MUST work on macOS and Linux systems.
+
+## Clarifications
+
+### Session 2026-03-20
+
+- Q: README says "zero-cost session cost tracking" but slash commands consume tokens. How should this be described? → A: "Automatic session cost tracking with zero-overhead data capture" — emphasizes the hook is free, commands cost normally.
+- Q: Should the installer support remote one-liner install or only local execution after cloning? → A: Remote one-liner (`curl -sL <url> | bash`) — no clone needed, true single-command install.
+- Q: How should the installer obtain cost tracker source files (hook, commands, pricing)? → A: Self-contained — all file contents embedded directly in the install script as heredocs.
+- Q: What should the update/reinstall behavior be for existing files? → A: Overwrite with backup — create `.bak` copies of existing files before replacing.
+- Q: Should the installer modify the target project's README.md? → A: No — technical files only. Don't touch README.
 
 ## Assumptions
 
-- The cost tracker files (hook script, slash commands, pricing config) are bundled within this repository and the installer copies or generates them into the target project's `.claude/` directory.
+- The install script is fully self-contained: all cost tracker files (hook script, slash commands, pricing config) are embedded in the script as heredocs. No additional network fetches are needed at install time.
 - The user runs the install command from the root of a directory that is or will become a Claude Code project.
 - The installer is a self-contained script with no external dependencies beyond standard shell utilities and `jq` (which it validates).
-- The install script is distributed as part of this repository. Users clone or download the repository and run the script.
+- The install script is hosted in this repository and fetchable via a raw GitHub URL. Users install via `curl -sL <url> | bash` without needing to clone the repo.
 - The cost tracker feature (001-cost-tracker) is implemented and its source files are available for the installer to copy.
 
 ## Success Criteria *(mandatory)*

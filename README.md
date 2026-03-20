@@ -1,6 +1,6 @@
 # Claude Code Cost Tracker
 
-Automatic, zero-cost session cost tracking for Claude Code projects. Captures token usage, model breakdown, durations, and code changes after every conversation — then lets you query it with simple slash commands.
+Automatic session cost tracking with zero-overhead data capture for Claude Code projects. Captures token usage, model breakdown, durations, and code changes after every conversation — then lets you query it with simple slash commands.
 
 ## How It Works
 
