@@ -136,9 +136,26 @@ OUTPUT=$(echo '{"session_id":"00000000-0000-0000-0000-000000000005","transcript_
 check "error mentions not found" "$(echo "$OUTPUT" | grep -c 'not found')" "1"
 check "no sessions file for missing transcript" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "missing"
 
-# --- Test 8: invalid session_id format ---
+# --- Test 8: upsert behavior (same session_id replaces previous record) ---
 echo
-echo "Test 8: invalid session_id format exits silently"
+echo "Test 8: same session_id replaces previous record (upsert)"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000006\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+check "first write creates file" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "exists"
+check "one record after first write" "$(wc -l < "$SESSIONS_FILE" | tr -d ' ')" "1"
+# Run again with same session_id — should replace, not append
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000006\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+check "still one record after upsert" "$(wc -l < "$SESSIONS_FILE" | tr -d ' ')" "1"
+# Add a different session, then upsert the first again
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000007\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+check "two records with different IDs" "$(wc -l < "$SESSIONS_FILE" | tr -d ' ')" "2"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000006\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+check "still two records after upsert of first" "$(wc -l < "$SESSIONS_FILE" | tr -d ' ')" "2"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 9: invalid session_id format ---
+echo
+echo "Test 9: invalid session_id format exits silently"
 rm -f "$SESSIONS_FILE"
 echo "{\"session_id\":\"not-a-uuid\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
 EXIT_CODE=$?
