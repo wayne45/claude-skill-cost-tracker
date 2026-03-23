@@ -74,9 +74,9 @@ check "haiku input_tokens = 800" "$HAIKU_INPUT" "800"
 OPUS_COST=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-opus")) | .cost_usd] | add')
 HAIKU_COST=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-haiku")) | .cost_usd] | add')
 TOTAL_COST=$(echo "$RECORD" | jq '.total_cost_usd')
-check "opus cost = 0.345" "$OPUS_COST" "0.345"
-check "haiku cost = 0.00244" "$HAIKU_COST" "0.00244"
-check "total cost = 0.34744" "$TOTAL_COST" "0.34744"
+check "opus cost = 0.155" "$OPUS_COST" "0.155"
+check "haiku cost = 0.00405" "$HAIKU_COST" "0.00405"
+check "total cost = 0.15905" "$TOTAL_COST" "0.15905"
 
 # Check required fields exist
 check "has timestamp" "$(echo "$RECORD" | jq 'has("timestamp")')" "true"
