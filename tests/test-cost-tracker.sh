@@ -97,6 +97,54 @@ check "sessions file has 2 lines" "$(wc -l < "$SESSIONS_FILE" | tr -d ' ')" "2"
 # Clean up
 rm -f "$SESSIONS_FILE"
 
+# --- Test 5: empty transcript file ---
+echo
+echo "Test 5: empty transcript file produces zero-cost record"
+EMPTY_FIXTURE=$(mktemp)
+: > "$EMPTY_FIXTURE"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000003\",\"transcript_path\":\"$EMPTY_FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+check "sessions file created with empty transcript" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "exists"
+EMPTY_RECORD=$(cat "$SESSIONS_FILE")
+check "total_cost is 0 for empty transcript" "$(echo "$EMPTY_RECORD" | jq '.total_cost_usd')" "0"
+check "models array is empty for empty transcript" "$(echo "$EMPTY_RECORD" | jq '.models | length')" "0"
+rm -f "$EMPTY_FIXTURE" "$SESSIONS_FILE"
+
+# --- Test 6: transcript with malformed lines ---
+echo
+echo "Test 6: malformed JSON lines are skipped gracefully"
+MALFORMED_FIXTURE=$(mktemp)
+cat > "$MALFORMED_FIXTURE" << 'FIXTURE_EOF'
+not valid json at all
+{"parentUuid":null,"type":"user","message":{"role":"user","content":"test"},"uuid":"msg-001","sessionId":"test","timestamp":"2026-03-05T09:00:00.000Z"}
+{broken json
+{"parentUuid":"msg-001","type":"assistant","message":{"model":"claude-opus-4-6-20260301","role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}},"uuid":"msg-002","sessionId":"test","timestamp":"2026-03-05T09:00:10.000Z"}
+FIXTURE_EOF
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000004\",\"transcript_path\":\"$MALFORMED_FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+check "sessions file created with malformed lines" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "exists"
+MALFORMED_RECORD=$(cat "$SESSIONS_FILE")
+check "valid JSON despite malformed input" "$(echo "$MALFORMED_RECORD" | jq -e . >/dev/null 2>&1 && echo "valid" || echo "invalid")" "valid"
+check "parsed valid lines only (input_tokens=100)" "$(echo "$MALFORMED_RECORD" | jq '[.models[].input_tokens] | add')" "100"
+rm -f "$MALFORMED_FIXTURE" "$SESSIONS_FILE"
+
+# --- Test 7: non-existent transcript file ---
+echo
+echo "Test 7: non-existent transcript file returns error"
+rm -f "$SESSIONS_FILE"
+OUTPUT=$(echo '{"session_id":"00000000-0000-0000-0000-000000000005","transcript_path":"/nonexistent/file.jsonl","stop_hook_active":false}' | bash "$HOOK" 2>&1) || true
+check "error mentions not found" "$(echo "$OUTPUT" | grep -c 'not found')" "1"
+check "no sessions file for missing transcript" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "missing"
+
+# --- Test 8: invalid session_id format ---
+echo
+echo "Test 8: invalid session_id format exits silently"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"not-a-uuid\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+EXIT_CODE=$?
+check "exit code is 0 for invalid UUID" "$EXIT_CODE" "0"
+check "no sessions file for invalid UUID" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "missing"
+
 # --- Summary ---
 echo
 echo "=== Results: $PASS passed, $FAIL failed ==="
