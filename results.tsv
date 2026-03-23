@@ -1,0 +1,9 @@
+commit	score	pass	total	status	description
+15b7793	90.5	22/25	keep	fix test to use valid UUID session IDs (baseline was 3/5 = 60.5)
+12ecbd2	102.5	25/25	keep	fix test expected cost values to match pricing.json
+ca751ab	103.5	35/35	keep	add edge case tests: empty transcript, malformed JSON, missing file, invalid UUID
+cccac5e	104.0	40/40	keep	add upsert test: same session_id replaces previous record
+6c90d07	104.3	43/43	keep	add tests for api_duration_ms and session start/end timestamps
+a034f31	104.7	47/47	keep	add deduplication test for consecutive assistant messages
+7c5ed27	105.1	51/51	keep	add test for missing pricing file fallback (zero cost, tokens still tracked)
+54c6c9f	105.4	54/54	keep	add full haiku token coverage tests (output, cache_read, cache_write)
