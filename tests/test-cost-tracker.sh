@@ -156,9 +156,23 @@ echo "{\"session_id\":\"00000000-0000-0000-0000-000000000006\",\"transcript_path
 check "still two records after upsert of first" "$(wc -l < "$SESSIONS_FILE" | tr -d ' ')" "2"
 rm -f "$SESSIONS_FILE"
 
-# --- Test 9: invalid session_id format ---
+# --- Test 9: consecutive assistant deduplication ---
 echo
-echo "Test 9: invalid session_id format exits silently"
+echo "Test 9: consecutive assistant messages are deduplicated"
+DEDUP_FIXTURE="$PROJECT_DIR/tests/fixtures/duplicate-assistant.jsonl"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000008\",\"transcript_path\":\"$DEDUP_FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+DEDUP_RECORD=$(cat "$SESSIONS_FILE")
+# Should only count the LAST assistant in the consecutive chain (not both)
+check "dedup: input_tokens = 1000 (not 2000)" "$(echo "$DEDUP_RECORD" | jq '[.models[].input_tokens] | add')" "1000"
+check "dedup: output_tokens = 200 (not 400)" "$(echo "$DEDUP_RECORD" | jq '[.models[].output_tokens] | add')" "200"
+check "dedup: cache_read = 5000 (not 10000)" "$(echo "$DEDUP_RECORD" | jq '[.models[].cache_read_tokens] | add')" "5000"
+check "dedup: cache_write = 500 (not 1000)" "$(echo "$DEDUP_RECORD" | jq '[.models[].cache_write_tokens] | add')" "500"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 10: invalid session_id format ---
+echo
+echo "Test 10: invalid session_id format exits silently"
 rm -f "$SESSIONS_FILE"
 echo "{\"session_id\":\"not-a-uuid\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
 EXIT_CODE=$?
