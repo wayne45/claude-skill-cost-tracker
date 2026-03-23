@@ -170,9 +170,25 @@ check "dedup: cache_read = 5000 (not 10000)" "$(echo "$DEDUP_RECORD" | jq '[.mod
 check "dedup: cache_write = 500 (not 1000)" "$(echo "$DEDUP_RECORD" | jq '[.models[].cache_write_tokens] | add')" "500"
 rm -f "$SESSIONS_FILE"
 
-# --- Test 10: invalid session_id format ---
+# --- Test 10: missing pricing file falls back to zero cost ---
 echo
-echo "Test 10: invalid session_id format exits silently"
+echo "Test 10: missing pricing file uses zero costs"
+rm -f "$SESSIONS_FILE"
+PRICING_FILE="$PROJECT_DIR/.claude/cost-data/pricing.json"
+PRICING_BACKUP="$PRICING_FILE.test-bak"
+mv "$PRICING_FILE" "$PRICING_BACKUP"
+OUTPUT=$(echo "{\"session_id\":\"00000000-0000-0000-0000-000000000009\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>&1)
+check "warns about missing pricing" "$(echo "$OUTPUT" | grep -q 'pricing' && echo "yes" || echo "no")" "yes"
+check "sessions file created without pricing" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "exists"
+NO_PRICE_RECORD=$(cat "$SESSIONS_FILE")
+check "total_cost is 0 without pricing" "$(echo "$NO_PRICE_RECORD" | jq '.total_cost_usd')" "0"
+check "tokens still tracked without pricing" "$(echo "$NO_PRICE_RECORD" | jq '[.models[].input_tokens] | add')" "4300"
+mv "$PRICING_BACKUP" "$PRICING_FILE"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 11: invalid session_id format ---
+echo
+echo "Test 11: invalid session_id format exits silently"
 rm -f "$SESSIONS_FILE"
 echo "{\"session_id\":\"not-a-uuid\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
 EXIT_CODE=$?
