@@ -10,6 +10,8 @@ Automatic session cost tracking with zero-overhead data capture for Claude Code 
 
 No API calls. No external services. Everything runs locally with `bash` + `jq`.
 
+> **Note:** All costs shown are estimates for reference only. Actual billing may differ due to pricing changes, rounding, or features not captured by local parsing.
+
 ## Prerequisites
 
 - **Claude Code** CLI installed and configured
