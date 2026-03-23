@@ -56,6 +56,9 @@ RECORD=$(cat "$SESSIONS_FILE")
 check "valid JSON" "$(echo "$RECORD" | jq -e . >/dev/null 2>&1&& echo "valid" || echo "invalid")" "valid"
 check "session_id matches" "$(echo "$RECORD" | jq -r '.session_id')" "00000000-0000-0000-0000-000000000001"
 check "wall_duration_ms is 130000" "$(echo "$RECORD" | jq '.wall_duration_ms')" "130000"
+check "api_duration_ms is 55000" "$(echo "$RECORD" | jq '.api_duration_ms')" "55000"
+check "session_start is correct" "$(echo "$RECORD" | jq -r '.session_start')" "2026-03-05T09:00:00.000Z"
+check "session_end is correct" "$(echo "$RECORD" | jq -r '.session_end')" "2026-03-05T09:02:10.000Z"
 
 # Check model token aggregation
 OPUS_INPUT=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-opus")) | .input_tokens] | add')
