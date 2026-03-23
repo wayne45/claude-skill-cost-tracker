@@ -123,4 +123,4 @@ The `model_pattern` is matched as a prefix against model IDs (e.g., `claude-opus
 
 ## License
 
-All rights reserved.
+[MIT](LICENSE)
