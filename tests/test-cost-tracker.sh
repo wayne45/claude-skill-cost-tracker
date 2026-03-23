@@ -47,14 +47,14 @@ check "error message mentions missing" "$(echo "$OUTPUT" | grep -c 'missing')" "
 echo
 echo "Test 3: successful run with sample transcript"
 rm -f "$SESSIONS_FILE"
-echo "{\"session_id\":\"test-session-001\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000001\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
 check "sessions file created" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "exists"
 check "output is single line" "$(wc -l < "$SESSIONS_FILE" | tr -d ' ')" "1"
 
 # Parse the output record
 RECORD=$(cat "$SESSIONS_FILE")
 check "valid JSON" "$(echo "$RECORD" | jq -e . >/dev/null 2>&1&& echo "valid" || echo "invalid")" "valid"
-check "session_id matches" "$(echo "$RECORD" | jq -r '.session_id')" "test-session-001"
+check "session_id matches" "$(echo "$RECORD" | jq -r '.session_id')" "00000000-0000-0000-0000-000000000001"
 check "wall_duration_ms is 130000" "$(echo "$RECORD" | jq '.wall_duration_ms')" "130000"
 
 # Check model token aggregation
@@ -91,7 +91,7 @@ check "2 models tracked" "$(echo "$RECORD" | jq '.models | length')" "2"
 # --- Test 4: idempotent append ---
 echo
 echo "Test 4: second run appends (does not overwrite)"
-echo "{\"session_id\":\"test-session-002\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000002\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
 check "sessions file has 2 lines" "$(wc -l < "$SESSIONS_FILE" | tr -d ' ')" "2"
 
 # Clean up
