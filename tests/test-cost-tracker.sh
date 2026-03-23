@@ -71,7 +71,13 @@ check "opus cache_read = 110000" "$OPUS_CACHE_READ" "110000"
 check "opus cache_write = 8000" "$OPUS_CACHE_WRITE" "8000"
 
 HAIKU_INPUT=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-haiku")) | .input_tokens] | add')
+HAIKU_OUTPUT=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-haiku")) | .output_tokens] | add')
+HAIKU_CACHE_READ=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-haiku")) | .cache_read_tokens] | add')
+HAIKU_CACHE_WRITE=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-haiku")) | .cache_write_tokens] | add')
 check "haiku input_tokens = 800" "$HAIKU_INPUT" "800"
+check "haiku output_tokens = 200" "$HAIKU_OUTPUT" "200"
+check "haiku cache_read = 10000" "$HAIKU_CACHE_READ" "10000"
+check "haiku cache_write = 1000" "$HAIKU_CACHE_WRITE" "1000"
 
 # Check cost calculations
 OPUS_COST=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-opus")) | .cost_usd] | add')
