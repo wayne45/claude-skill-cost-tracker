@@ -50,7 +50,7 @@ All runtime files live under `.claude/` following Claude Code conventions. Tests
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Verify existing pricing rates in `.claude/cost-data/pricing.json` match official Anthropic API pricing (Opus 4.6/4.5: $5/$25, Sonnet 4.6/4.5/4: $3/$15, Haiku 4.5: $1/$5) — no changes expected, document verification in a comment at top of pricing.json
+- [ ] T006 [US1] Verify existing pricing rates in `.claude/cost-data/pricing.json` match official Anthropic API pricing (Opus 4.6/4.5: $5/$25, Sonnet 4.6/4.5/4: $3/$15, Haiku 4.5: $1/$5) — no rate changes expected, document verification in the commit message
 - [ ] T007 [US1] Update `tests/fixtures/expected-output.json` to add expected cost values for the newly added `claude-opus-4-1` and `claude-opus-4-` pricing entries, confirming older models calculate at $15/$75 rates
 - [ ] T008 [US1] Add test case in `tests/test-cost-tracker.sh`: verify cost calculation for a transcript using `claude-opus-4-6-20260301` produces the correct cost at $5/$25 input/output rates (verifies known-model pricing accuracy)
 
@@ -94,7 +94,12 @@ All runtime files live under `.claude/` following Claude Code conventions. Tests
 - [ ] T021 [P] [US3] Add test case in `tests/test-cost-tracker.sh`: verify per-model `total_tokens` equals `input_tokens + output_tokens + cache_read_tokens + cache_write_tokens` for each model in a sample session
 - [ ] T022 [P] [US3] Add test case in `tests/test-cost-tracker.sh`: verify session-level `total_tokens` equals the sum of all per-model `total_tokens` values
 
-**Checkpoint**: Turn count and total tokens tracked accurately
+### Edge Case Tests (cross-cutting, placed here since they verify turns + total_tokens at boundaries)
+
+- [ ] T039 [P] [US3] Add test case in `tests/test-cost-tracker.sh`: create a minimal transcript fixture with a model entry that has all-zero token counts (`input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0`) — verify the model appears in the output with `cost_usd: 0.0000`, `total_tokens: 0`, and is not omitted
+- [ ] T040 [P] [US3] Add test case in `tests/test-cost-tracker.sh`: create a minimal transcript fixture containing only user messages (no assistant messages) — verify the output record has `turns: 0`, `total_tokens: 0`, `total_cost_usd: 0.0000`, and an empty `models` array
+
+**Checkpoint**: Turn count and total tokens tracked accurately, including boundary cases
 
 ---
 
@@ -144,6 +149,8 @@ All runtime files live under `.claude/` following Claude Code conventions. Tests
 - [ ] T036 Update `src/install.sh`: replace embedded `cost-report.md` and `cost-session.md` heredocs with updated slash command content
 - [ ] T037 Run full test suite `bash tests/test-cost-tracker.sh` — verify all existing and new tests pass
 - [ ] T038 Run quickstart.md validation: manually verify upgrade path works (re-run installer, check new fields appear in output)
+
+**Total tasks: 40**
 
 ---
 

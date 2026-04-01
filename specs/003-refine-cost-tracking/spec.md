@@ -11,7 +11,7 @@ The Claude Code cost tracker skill (feature 001) was built based on observed beh
 
 ### Key Gaps Identified
 
-1. **Pricing table discrepancy**: The skill's `pricing.json` uses rates ($5/$25 Opus, $3/$15 Sonnet) that differ from the Rust source's hardcoded rates ($15/$75 for both Opus and Sonnet, $1/$5 Haiku). The correct rates should match the official Anthropic API pricing, which may differ from both sources depending on model generation.
+1. **Pricing table verification**: The skill's `pricing.json` uses rates ($5/$25 Opus, $3/$15 Sonnet) that differ from the Rust source's hardcoded rates ($15/$75 for both Opus and Sonnet, $1/$5 Haiku). Research confirmed the skill's rates are correct for current-generation models (Opus 4.5+, Sonnet 4+, Haiku 4.5); the Rust source uses stale Opus 4.0/4.1 pricing. The pricing table needs older model entries added but no rate corrections.
 2. **No "estimated-default" tagging**: When the Rust source encounters an unknown model, it falls back to Sonnet-tier pricing AND tags the output with `pricing=estimated-default`. The skill silently returns zero cost for unpriced models — no fallback estimation, no user warning in cost records.
 3. **Missing turn count tracking**: The Rust source tracks `turns` (number of API calls per session) via `UsageTracker`. The skill does not track turn count, losing useful granularity for understanding cost-per-turn.
 4. **Cost precision inconsistency**: The Rust source formats costs to exactly 4 decimal places (`$X.XXXX`). The skill rounds to 6 decimal places. Inconsistent precision makes cross-referencing difficult.
@@ -112,7 +112,7 @@ As a Claude Code user, I want cost values formatted to a consistent number of de
 
 ### Functional Requirements
 
-- **FR-001**: System MUST update the pricing table to reflect current official Anthropic API pricing for all supported model families (Opus, Sonnet, Haiku) across all four token types (input, output, cache read, cache write).
+- **FR-001**: System MUST verify and maintain the pricing table to reflect current official Anthropic API pricing for all supported model families (Opus, Sonnet, Haiku) across all four token types (input, output, cache read, cache write). Research confirmed existing rates are correct; this requirement covers adding missing model entries and keeping rates current.
 - **FR-002**: System MUST apply fallback pricing (default: Sonnet-tier rates) when a model in the transcript is not found in the pricing table, instead of producing zero cost.
 - **FR-003**: System MUST tag cost records with a `pricing_estimated` flag (boolean) when any model in the session used fallback/estimated pricing.
 - **FR-004**: System MUST tag each per-model entry with `pricing_estimated: true` when that specific model used fallback pricing, so multi-model sessions clearly distinguish exact vs. estimated costs.
