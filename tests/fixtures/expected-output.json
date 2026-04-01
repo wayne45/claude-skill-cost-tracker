@@ -3,7 +3,11 @@
   "session_start": "2026-03-05T09:00:00.000Z",
   "session_end": "2026-03-05T09:02:10.000Z",
   "wall_duration_ms": 130000,
-  "total_cost_usd_approx": 0.3474,
+  "total_cost_usd": 0.1591,
+  "turns": 3,
+  "total_tokens": 134800,
+  "pricing_version": 2,
+  "pricing_estimated": false,
   "models": [
     {
       "model": "claude-opus-4-6-20260301",
@@ -11,7 +15,10 @@
       "output_tokens": 1300,
       "cache_read_tokens": 110000,
       "cache_write_tokens": 8000,
-      "cost_usd_approx": 0.345
+      "total_tokens": 122800,
+      "cost_usd": 0.155,
+      "pricing_estimated": false,
+      "notes": "opus: (3500*5 + 1300*25 + 110000*0.50 + 8000*6.25) / 1000000 = 0.155"
     },
     {
       "model": "claude-haiku-4-5-20251001",
@@ -19,8 +26,20 @@
       "output_tokens": 200,
       "cache_read_tokens": 10000,
       "cache_write_tokens": 1000,
-      "cost_usd_approx": 0.00244
+      "total_tokens": 12000,
+      "cost_usd": 0.0041,
+      "pricing_estimated": false,
+      "notes": "haiku: (800*1 + 200*5 + 10000*0.10 + 1000*1.25) / 1000000 = 0.00405 → rounded to 0.0041"
     }
   ],
-  "notes": "Approximate values. Costs rounded to 6 decimal places in actual output."
+  "older_model_examples": {
+    "claude-opus-4-1": {
+      "input_per_mtok": 15.00,
+      "output_per_mtok": 75.00,
+      "cache_read_per_mtok": 1.50,
+      "cache_write_per_mtok": 18.75,
+      "notes": "Older Opus 4.0/4.1 at higher price tier"
+    }
+  },
+  "notes": "Costs rounded to 4 decimal places. Pricing version 2."
 }

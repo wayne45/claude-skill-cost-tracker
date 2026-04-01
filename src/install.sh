@@ -228,7 +228,10 @@ if [ -d "$SESSION_DIR/subagents" ]; then
   fi
 fi
 
-# Aggregate by model
+# Count turns (deduplicated assistant messages = API calls)
+TURNS=$(echo "$ALL_USAGE" | jq 'length')
+
+# Aggregate by model (with total_tokens per model)
 MODEL_USAGE=$(echo "$ALL_USAGE" | jq '
   group_by(.model) |
   map({
@@ -237,7 +240,7 @@ MODEL_USAGE=$(echo "$ALL_USAGE" | jq '
     output_tokens: ([.[].usage.output_tokens // 0] | add),
     cache_read_tokens: ([.[].usage.cache_read_input_tokens // 0] | add),
     cache_write_tokens: ([.[].usage.cache_creation_input_tokens // 0] | add)
-  })
+  } | . + {total_tokens: (.input_tokens + .output_tokens + .cache_read_tokens + .cache_write_tokens)})
 ') || {
   echo "cost-tracker: failed to aggregate usage" >&2
   exit 1
@@ -245,42 +248,62 @@ MODEL_USAGE=$(echo "$ALL_USAGE" | jq '
 
 # --- Load pricing and calculate costs ---
 
-# Load pricing data (fall back to empty if file missing)
+# Load pricing data (fall back to Sonnet-tier defaults if file missing)
 if [ -f "$PRICING_FILE" ]; then
   PRICING=$(cat "$PRICING_FILE")
 else
-  echo "cost-tracker: pricing file not found, using zero costs" >&2
-  PRICING='{"models":[],"fallback_formula":{"cache_read_ratio":0.10,"cache_write_ratio":0.25}}'
+  echo "cost-tracker: pricing file not found, using fallback (sonnet-tier) defaults" >&2
+  PRICING='{"version":0,"models":[],"fallback":{"tier":"sonnet","input_per_mtok":3.00,"output_per_mtok":15.00,"cache_read_per_mtok":0.30,"cache_write_per_mtok":3.75}}'
 fi
 
-# Calculate per-model costs using longest-prefix match on pricing patterns
+# Extract pricing version for audit trail
+PRICING_VERSION=$(echo "$PRICING" | jq '.version // 0')
+
+# Calculate per-model costs using longest-prefix match, with fallback pricing
 MODEL_USAGE_WITH_COST=$(echo "$MODEL_USAGE" | jq --argjson pricing "$PRICING" '
   map(. as $usage |
     ($pricing.models
      | map(select(.model_pattern as $pat | $usage.model | startswith($pat)))
      | sort_by(.model_pattern | length) | reverse | .[0] // null) as $price |
     if $price then
-      . + {cost_usd: ((
-        ($usage.input_tokens * $price.input_per_mtok / 1000000) +
-        ($usage.output_tokens * $price.output_per_mtok / 1000000) +
-        ($usage.cache_read_tokens * $price.cache_read_per_mtok / 1000000) +
-        ($usage.cache_write_tokens * $price.cache_write_per_mtok / 1000000)
-      ) * 1000000 | round | . / 1000000)}
+      . + {
+        cost_usd: ((
+          ($usage.input_tokens * $price.input_per_mtok / 1000000) +
+          ($usage.output_tokens * $price.output_per_mtok / 1000000) +
+          ($usage.cache_read_tokens * $price.cache_read_per_mtok / 1000000) +
+          ($usage.cache_write_tokens * $price.cache_write_per_mtok / 1000000)
+        ) * 10000 | round | . / 10000),
+        pricing_estimated: false
+      }
+    elif ($pricing.fallback // null) then
+      . + {
+        cost_usd: ((
+          ($usage.input_tokens * $pricing.fallback.input_per_mtok / 1000000) +
+          ($usage.output_tokens * $pricing.fallback.output_per_mtok / 1000000) +
+          ($usage.cache_read_tokens * $pricing.fallback.cache_read_per_mtok / 1000000) +
+          ($usage.cache_write_tokens * $pricing.fallback.cache_write_per_mtok / 1000000)
+        ) * 10000 | round | . / 10000),
+        pricing_estimated: true
+      }
     else
-      . + {cost_usd: 0}
+      . + {cost_usd: 0, pricing_estimated: true}
     end
   )
 ')
 
-# Warn about models missing from pricing configuration
+# Warn about models that used fallback pricing
 UNMATCHED=$(echo "$MODEL_USAGE_WITH_COST" | jq -r '
-  [.[] | select(.cost_usd == 0 and (.input_tokens + .output_tokens) > 0) | .model] | .[]
+  [.[] | select(.pricing_estimated == true and (.input_tokens + .output_tokens) > 0) | .model] | .[]
 ')
 if [ -n "$UNMATCHED" ]; then
-  echo "cost-tracker: no pricing for model(s): $UNMATCHED — add to pricing.json" >&2
+  while IFS= read -r model_name; do
+    echo "cost-tracker: no pricing match for model '$model_name', using fallback (sonnet-tier) — add to pricing.json" >&2
+  done <<< "$UNMATCHED"
 fi
 
-TOTAL_COST=$(echo "$MODEL_USAGE_WITH_COST" | jq '[.[].cost_usd] | add // 0 | . * 1000000 | round | . / 1000000')
+TOTAL_COST=$(echo "$MODEL_USAGE_WITH_COST" | jq '[.[].cost_usd] | add // 0 | . * 10000 | round | . / 10000')
+TOTAL_TOKENS=$(echo "$MODEL_USAGE_WITH_COST" | jq '[.[].total_tokens] | add // 0')
+PRICING_ESTIMATED=$(echo "$MODEL_USAGE_WITH_COST" | jq '[.[].pricing_estimated] | any')
 
 # --- Track code changes ---
 
@@ -310,6 +333,10 @@ COST_RECORD=$(jq -cn \
   --argjson lines_added "$LINES_ADDED" \
   --argjson lines_removed "$LINES_REMOVED" \
   --argjson total_cost_usd "$TOTAL_COST" \
+  --argjson turns "$TURNS" \
+  --argjson total_tokens "$TOTAL_TOKENS" \
+  --argjson pricing_version "$PRICING_VERSION" \
+  --argjson pricing_estimated "$PRICING_ESTIMATED" \
   --argjson models "$MODEL_USAGE_WITH_COST" \
   '{
     session_id: $session_id,
@@ -321,6 +348,10 @@ COST_RECORD=$(jq -cn \
     lines_added: $lines_added,
     lines_removed: $lines_removed,
     total_cost_usd: $total_cost_usd,
+    turns: $turns,
+    total_tokens: $total_tokens,
+    pricing_version: $pricing_version,
+    pricing_estimated: $pricing_estimated,
     models: $models
   }')
 
@@ -383,14 +414,18 @@ $ARGUMENTS
 2. **Deduplicate by session_id**: If multiple records share the same `session_id`, keep only the one with the latest `timestamp`.
 
 3. **Aggregate totals** across all deduplicated sessions:
-   - Total cost (sum of `total_cost_usd`)
+   - Total cost (sum of `total_cost_usd`, format to 4 decimal places)
    - Total sessions (count of unique session_ids)
+   - Total turns (sum of `turns`)
+   - Total tokens (sum of `total_tokens`)
    - Total API duration (sum of `api_duration_ms`, format as `Xh Xm Xs`)
    - Total wall time (sum of `wall_duration_ms`, format as `Xh Xm Xs`)
    - Total lines added (sum of `lines_added`)
    - Total lines removed (sum of `lines_removed`)
-   - Per-model token totals (sum `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` across all sessions, grouped by model)
+   - Per-model token totals (sum `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `total_tokens` across all sessions, grouped by model)
    - Per-model cost totals (sum `cost_usd` per model)
+   - Pricing version (from `pricing_version` field — show the latest version seen)
+   - Pricing estimated flag: if any session has `pricing_estimated: true`, show a warning
 
 4. **Format token counts** for display:
    - Under 1,000: show as-is (e.g., `800`)
@@ -402,17 +437,24 @@ $ARGUMENTS
 ```
 ## Cost Report Summary
 
-Total cost:         $X.XX
+Total cost:         $X.XXXX
 Total sessions:     N
+Total turns:        N
+Total tokens:       X.Xm
 Total API duration: Xh Xm Xs
 Total wall time:    Xh Xm Xs
 Total code changes: X lines added, X lines removed
+Pricing version:    N
+⚠ Some sessions used estimated (fallback) pricing   ← only if pricing_estimated is true
 
 ### Usage by Model
 
-| Model | Input | Output | Cache Read | Cache Write | Cost |
-|-------|-------|--------|------------|-------------|------|
-| claude-opus-4-6 | X.Xk | X.Xk | X.Xm | X.Xk | $X.XX |
+| Model | Input | Output | Cache Read | Cache Write | Total | Cost | Est? |
+|-------|-------|--------|------------|-------------|-------|------|------|
+| claude-opus-4-6 | X.Xk | X.Xk | X.Xm | X.Xk | X.Xm | $X.XXXX | |
+| claude-unknown | X.Xk | X.Xk | X.Xk | X.Xk | X.Xk | $X.XXXX | * |
+
+* = estimated (fallback) pricing used for this model
 
 Report saved to: .claude/cost-data/report.md
 ```
@@ -477,16 +519,23 @@ $ARGUMENTS
 ## Session Cost: [first 12 chars of session_id]...
 
 Date:           YYYY-MM-DD HH:MM
-Total cost:     $X.XX
+Total cost:     $X.XXXX
+Turns:          N
+Total tokens:   X.Xm
 API duration:   Xm Xs
 Wall time:      Xm Xs
 Code changes:   X lines added, X lines removed
+Pricing version: N
+⚠ Some costs are estimated (fallback pricing)   ← only if pricing_estimated is true
 
 ### Usage by Model
 
-| Model | Input | Output | Cache Read | Cache Write | Cost |
-|-------|-------|--------|------------|-------------|------|
-| claude-opus-4-6 | X.Xk | X.Xk | X.Xm | X.Xk | $X.XX |
+| Model | Input | Output | Cache Read | Cache Write | Total | Cost | Est? |
+|-------|-------|--------|------------|-------------|-------|------|------|
+| claude-opus-4-6 | X.Xk | X.Xk | X.Xm | X.Xk | X.Xm | $X.XXXX | |
+| claude-unknown | X.Xk | X.Xk | X.Xk | X.Xk | X.Xk | $X.XXXX | * |
+
+* = estimated (fallback) pricing used for this model
 ```
 
 Do NOT write any files. Display only.
@@ -551,8 +600,8 @@ write_pricing_config() {
   local target="$1"
   cat > "$target" << 'PRICING_JSON_EOF'
 {
-  "version": 1,
-  "updated": "2026-03-05",
+  "version": 2,
+  "updated": "2026-04-01",
   "models": [
     {
       "model_pattern": "claude-opus-4-6",
@@ -595,12 +644,28 @@ write_pricing_config() {
       "output_per_mtok": 15.00,
       "cache_read_per_mtok": 0.30,
       "cache_write_per_mtok": 3.75
+    },
+    {
+      "model_pattern": "claude-opus-4-1",
+      "input_per_mtok": 15.00,
+      "output_per_mtok": 75.00,
+      "cache_read_per_mtok": 1.50,
+      "cache_write_per_mtok": 18.75
+    },
+    {
+      "model_pattern": "claude-opus-4-",
+      "input_per_mtok": 15.00,
+      "output_per_mtok": 75.00,
+      "cache_read_per_mtok": 1.50,
+      "cache_write_per_mtok": 18.75
     }
   ],
-  "fallback_formula": {
-    "cache_read_ratio": 0.10,
-    "cache_write_ratio": 0.25,
-    "note": "For unknown models: cache_read = input_price * 0.10, cache_write = input_price * 0.25"
+  "fallback": {
+    "tier": "sonnet",
+    "input_per_mtok": 3.00,
+    "output_per_mtok": 15.00,
+    "cache_read_per_mtok": 0.30,
+    "cache_write_per_mtok": 3.75
   }
 }
 PRICING_JSON_EOF
