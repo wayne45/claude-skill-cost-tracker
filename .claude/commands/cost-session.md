@@ -39,16 +39,23 @@ $ARGUMENTS
 ## Session Cost: [first 12 chars of session_id]...
 
 Date:           YYYY-MM-DD HH:MM
-Total cost:     $X.XX
+Total cost:     $X.XXXX
+Turns:          N
+Total tokens:   X.Xm
 API duration:   Xm Xs
 Wall time:      Xm Xs
 Code changes:   X lines added, X lines removed
+Pricing version: N
+⚠ Some costs are estimated (fallback pricing)   ← only if pricing_estimated is true
 
 ### Usage by Model
 
-| Model | Input | Output | Cache Read | Cache Write | Cost |
-|-------|-------|--------|------------|-------------|------|
-| claude-opus-4-6 | X.Xk | X.Xk | X.Xm | X.Xk | $X.XX |
+| Model | Input | Output | Cache Read | Cache Write | Total | Cost | Est? |
+|-------|-------|--------|------------|-------------|-------|------|------|
+| claude-opus-4-6 | X.Xk | X.Xk | X.Xm | X.Xk | X.Xm | $X.XXXX | |
+| claude-unknown | X.Xk | X.Xk | X.Xk | X.Xk | X.Xk | $X.XXXX | * |
+
+* = estimated (fallback) pricing used for this model
 ```
 
 Do NOT write any files. Display only.

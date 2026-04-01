@@ -24,14 +24,18 @@ $ARGUMENTS
 2. **Deduplicate by session_id**: If multiple records share the same `session_id`, keep only the one with the latest `timestamp`.
 
 3. **Aggregate totals** across all deduplicated sessions:
-   - Total cost (sum of `total_cost_usd`)
+   - Total cost (sum of `total_cost_usd`, format to 4 decimal places)
    - Total sessions (count of unique session_ids)
+   - Total turns (sum of `turns`)
+   - Total tokens (sum of `total_tokens`)
    - Total API duration (sum of `api_duration_ms`, format as `Xh Xm Xs`)
    - Total wall time (sum of `wall_duration_ms`, format as `Xh Xm Xs`)
    - Total lines added (sum of `lines_added`)
    - Total lines removed (sum of `lines_removed`)
-   - Per-model token totals (sum `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` across all sessions, grouped by model)
+   - Per-model token totals (sum `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `total_tokens` across all sessions, grouped by model)
    - Per-model cost totals (sum `cost_usd` per model)
+   - Pricing version (from `pricing_version` field — show the latest version seen)
+   - Pricing estimated flag: if any session has `pricing_estimated: true`, show a warning
 
 4. **Format token counts** for display:
    - Under 1,000: show as-is (e.g., `800`)
@@ -43,17 +47,24 @@ $ARGUMENTS
 ```
 ## Cost Report Summary
 
-Total cost:         $X.XX
+Total cost:         $X.XXXX
 Total sessions:     N
+Total turns:        N
+Total tokens:       X.Xm
 Total API duration: Xh Xm Xs
 Total wall time:    Xh Xm Xs
 Total code changes: X lines added, X lines removed
+Pricing version:    N
+⚠ Some sessions used estimated (fallback) pricing   ← only if pricing_estimated is true
 
 ### Usage by Model
 
-| Model | Input | Output | Cache Read | Cache Write | Cost |
-|-------|-------|--------|------------|-------------|------|
-| claude-opus-4-6 | X.Xk | X.Xk | X.Xm | X.Xk | $X.XX |
+| Model | Input | Output | Cache Read | Cache Write | Total | Cost | Est? |
+|-------|-------|--------|------------|-------------|-------|------|------|
+| claude-opus-4-6 | X.Xk | X.Xk | X.Xm | X.Xk | X.Xm | $X.XXXX | |
+| claude-unknown | X.Xk | X.Xk | X.Xk | X.Xk | X.Xk | $X.XXXX | * |
+
+* = estimated (fallback) pricing used for this model
 
 Report saved to: .claude/cost-data/report.md
 ```

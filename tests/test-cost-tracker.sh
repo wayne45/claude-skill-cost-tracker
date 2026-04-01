@@ -84,8 +84,8 @@ OPUS_COST=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude
 HAIKU_COST=$(echo "$RECORD" | jq '[.models[] | select(.model | startswith("claude-haiku")) | .cost_usd] | add')
 TOTAL_COST=$(echo "$RECORD" | jq '.total_cost_usd')
 check "opus cost = 0.155" "$OPUS_COST" "0.155"
-check "haiku cost = 0.00405" "$HAIKU_COST" "0.00405"
-check "total cost = 0.15905" "$TOTAL_COST" "0.15905"
+check "haiku cost = 0.0041" "$HAIKU_COST" "0.0041"
+check "total cost = 0.1591" "$TOTAL_COST" "0.1591"
 
 # Check required fields exist
 check "has timestamp" "$(echo "$RECORD" | jq 'has("timestamp")')" "true"
@@ -176,9 +176,9 @@ check "dedup: cache_read = 5000 (not 10000)" "$(echo "$DEDUP_RECORD" | jq '[.mod
 check "dedup: cache_write = 500 (not 1000)" "$(echo "$DEDUP_RECORD" | jq '[.models[].cache_write_tokens] | add')" "500"
 rm -f "$SESSIONS_FILE"
 
-# --- Test 10: missing pricing file falls back to zero cost ---
+# --- Test 10: missing pricing file uses fallback (sonnet-tier) pricing ---
 echo
-echo "Test 10: missing pricing file uses zero costs"
+echo "Test 10: missing pricing file uses fallback pricing"
 rm -f "$SESSIONS_FILE"
 PRICING_FILE="$PROJECT_DIR/.claude/cost-data/pricing.json"
 PRICING_BACKUP="$PRICING_FILE.test-bak"
@@ -187,7 +187,9 @@ OUTPUT=$(echo "{\"session_id\":\"00000000-0000-0000-0000-000000000009\",\"transc
 check "warns about missing pricing" "$(echo "$OUTPUT" | grep -q 'pricing' && echo "yes" || echo "no")" "yes"
 check "sessions file created without pricing" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "exists"
 NO_PRICE_RECORD=$(cat "$SESSIONS_FILE")
-check "total_cost is 0 without pricing" "$(echo "$NO_PRICE_RECORD" | jq '.total_cost_usd')" "0"
+check "total_cost > 0 with fallback pricing" "$(echo "$NO_PRICE_RECORD" | jq '.total_cost_usd > 0')" "true"
+check "pricing_estimated is true without pricing file" "$(echo "$NO_PRICE_RECORD" | jq '.pricing_estimated')" "true"
+check "all models pricing_estimated" "$(echo "$NO_PRICE_RECORD" | jq '[.models[].pricing_estimated] | all')" "true"
 check "tokens still tracked without pricing" "$(echo "$NO_PRICE_RECORD" | jq '[.models[].input_tokens] | add')" "4300"
 mv "$PRICING_BACKUP" "$PRICING_FILE"
 rm -f "$SESSIONS_FILE"
@@ -200,6 +202,157 @@ echo "{\"session_id\":\"not-a-uuid\",\"transcript_path\":\"$FIXTURE\",\"stop_hoo
 EXIT_CODE=$?
 check "exit code is 0 for invalid UUID" "$EXIT_CODE" "0"
 check "no sessions file for invalid UUID" "$(test -f "$SESSIONS_FILE" && echo "exists" || echo "missing")" "missing"
+
+# --- Test 12: known-model pricing accuracy (T008) ---
+echo
+echo "Test 12: opus pricing accuracy at \$5/\$25 rates"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000010\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD12=$(cat "$SESSIONS_FILE")
+OPUS_COST12=$(echo "$RECORD12" | jq '[.models[] | select(.model | startswith("claude-opus")) | .cost_usd] | add')
+# Opus: (3500*5 + 1300*25 + 110000*0.50 + 8000*6.25) / 1000000 = 0.155
+check "opus cost at \$5/\$25 = 0.155" "$OPUS_COST12" "0.155"
+check "opus pricing_estimated = false" "$(echo "$RECORD12" | jq '[.models[] | select(.model | startswith("claude-opus")) | .pricing_estimated] | all(. == false)')" "true"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 13: fallback pricing for unknown model (T013) ---
+echo
+echo "Test 13: unknown model gets fallback pricing"
+UNKNOWN_FIXTURE="$PROJECT_DIR/tests/fixtures/unknown-model-transcript.jsonl"
+rm -f "$SESSIONS_FILE"
+OUTPUT13=$(echo "{\"session_id\":\"00000000-0000-0000-0000-000000000011\",\"transcript_path\":\"$UNKNOWN_FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>&1)
+RECORD13=$(cat "$SESSIONS_FILE")
+check "unknown model cost > 0" "$(echo "$RECORD13" | jq '.total_cost_usd > 0')" "true"
+check "model pricing_estimated = true" "$(echo "$RECORD13" | jq '.models[0].pricing_estimated')" "true"
+check "session pricing_estimated = true" "$(echo "$RECORD13" | jq '.pricing_estimated')" "true"
+check "stderr mentions fallback" "$(echo "$OUTPUT13" | grep -c 'using fallback')" "1"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 14: mixed known/unknown models (T014) ---
+echo
+echo "Test 14: mixed known/unknown models in one session"
+MIXED_FIXTURE="$PROJECT_DIR/tests/fixtures/mixed-model-transcript.jsonl"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000012\",\"transcript_path\":\"$MIXED_FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD14=$(cat "$SESSIONS_FILE")
+check "known model pricing_estimated = false" "$(echo "$RECORD14" | jq '[.models[] | select(.model | startswith("claude-opus")) | .pricing_estimated] | .[0]')" "false"
+check "unknown model pricing_estimated = true" "$(echo "$RECORD14" | jq '[.models[] | select(.model == "claude-unknown-5") | .pricing_estimated] | .[0]')" "true"
+check "session pricing_estimated = true (any estimated)" "$(echo "$RECORD14" | jq '.pricing_estimated')" "true"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 15: missing pricing file produces fallback costs (T015) ---
+echo
+echo "Test 15: missing pricing file — all models get fallback"
+rm -f "$SESSIONS_FILE"
+mv "$PRICING_FILE" "$PRICING_BACKUP"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000013\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD15=$(cat "$SESSIONS_FILE")
+check "all models estimated when no pricing file" "$(echo "$RECORD15" | jq '[.models[].pricing_estimated] | all')" "true"
+check "total cost > 0 with fallback" "$(echo "$RECORD15" | jq '.total_cost_usd > 0')" "true"
+mv "$PRICING_BACKUP" "$PRICING_FILE"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 16: turn count (T020) ---
+echo
+echo "Test 16: turn count matches deduplicated assistant messages"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000014\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD16=$(cat "$SESSIONS_FILE")
+# sample-transcript.jsonl has 3 assistant messages (msg-002, msg-004, msg-006), none consecutive
+check "turns = 3" "$(echo "$RECORD16" | jq '.turns')" "3"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 17: per-model total_tokens (T021) ---
+echo
+echo "Test 17: per-model total_tokens = sum of all 4 token types"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000015\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD17=$(cat "$SESSIONS_FILE")
+# Opus: 3500 + 1300 + 110000 + 8000 = 122800
+OPUS_TOTAL=$(echo "$RECORD17" | jq '[.models[] | select(.model | startswith("claude-opus")) | .total_tokens] | add')
+check "opus total_tokens = 122800" "$OPUS_TOTAL" "122800"
+# Haiku: 800 + 200 + 10000 + 1000 = 12000
+HAIKU_TOTAL=$(echo "$RECORD17" | jq '[.models[] | select(.model | startswith("claude-haiku")) | .total_tokens] | add')
+check "haiku total_tokens = 12000" "$HAIKU_TOTAL" "12000"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 18: session-level total_tokens (T022) ---
+echo
+echo "Test 18: session total_tokens = sum of all model total_tokens"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000016\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD18=$(cat "$SESSIONS_FILE")
+# 122800 + 12000 = 134800
+check "session total_tokens = 134800" "$(echo "$RECORD18" | jq '.total_tokens')" "134800"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 19: pricing_version (T025) ---
+echo
+echo "Test 19: pricing_version matches pricing.json version"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000017\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD19=$(cat "$SESSIONS_FILE")
+EXPECTED_VERSION=$(jq '.version' "$PRICING_FILE")
+check "pricing_version = $EXPECTED_VERSION" "$(echo "$RECORD19" | jq '.pricing_version')" "$EXPECTED_VERSION"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 20: pricing_version defaults to 0 when missing (T026) ---
+echo
+echo "Test 20: pricing_version defaults to 0 when version field missing"
+rm -f "$SESSIONS_FILE"
+# Create a minimal pricing.json without version field
+PRICING_NO_VER=$(mktemp)
+echo '{"models":[],"fallback":{"tier":"sonnet","input_per_mtok":3,"output_per_mtok":15,"cache_read_per_mtok":0.30,"cache_write_per_mtok":3.75}}' > "$PRICING_NO_VER"
+mv "$PRICING_FILE" "$PRICING_BACKUP"
+mv "$PRICING_NO_VER" "$PRICING_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000018\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD20=$(cat "$SESSIONS_FILE")
+check "pricing_version defaults to 0" "$(echo "$RECORD20" | jq '.pricing_version')" "0"
+mv "$PRICING_BACKUP" "$PRICING_FILE"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 21: 4-decimal cost precision (T031) ---
+echo
+echo "Test 21: cost values have 4-decimal precision"
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000019\",\"transcript_path\":\"$FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD21=$(cat "$SESSIONS_FILE")
+# Haiku cost 0.00405 rounds to 0.0041 (not 0.004050 or 0.00405)
+HAIKU_COST21=$(echo "$RECORD21" | jq -r '[.models[] | select(.model | startswith("claude-haiku")) | .cost_usd] | .[0] | tostring')
+check "haiku cost rounded to 4 decimals = 0.0041" "$HAIKU_COST21" "0.0041"
+rm -f "$SESSIONS_FILE"
+
+# --- Test 22: zero-token model appears in output (T039) ---
+echo
+echo "Test 22: model with zero tokens still appears in output"
+ZERO_FIXTURE=$(mktemp)
+cat > "$ZERO_FIXTURE" << 'FIXTURE_EOF'
+{"parentUuid":null,"type":"user","message":{"role":"user","content":"test"},"uuid":"msg-001","sessionId":"test","timestamp":"2026-04-01T10:00:00.000Z"}
+{"parentUuid":"msg-001","type":"assistant","message":{"model":"claude-opus-4-6-20260301","role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}},"uuid":"msg-002","sessionId":"test","timestamp":"2026-04-01T10:00:05.000Z"}
+FIXTURE_EOF
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000020\",\"transcript_path\":\"$ZERO_FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD22=$(cat "$SESSIONS_FILE")
+check "zero-token model present" "$(echo "$RECORD22" | jq '.models | length')" "1"
+check "zero-token model cost = 0" "$(echo "$RECORD22" | jq '.models[0].cost_usd')" "0"
+check "zero-token model total_tokens = 0" "$(echo "$RECORD22" | jq '.models[0].total_tokens')" "0"
+rm -f "$ZERO_FIXTURE" "$SESSIONS_FILE"
+
+# --- Test 23: empty session (no assistant messages) (T040) ---
+echo
+echo "Test 23: session with no assistant messages"
+USER_ONLY_FIXTURE=$(mktemp)
+cat > "$USER_ONLY_FIXTURE" << 'FIXTURE_EOF'
+{"parentUuid":null,"type":"user","message":{"role":"user","content":"hello"},"uuid":"msg-001","sessionId":"test","timestamp":"2026-04-01T10:00:00.000Z"}
+FIXTURE_EOF
+rm -f "$SESSIONS_FILE"
+echo "{\"session_id\":\"00000000-0000-0000-0000-000000000021\",\"transcript_path\":\"$USER_ONLY_FIXTURE\",\"stop_hook_active\":false}" | bash "$HOOK" 2>/dev/null
+RECORD23=$(cat "$SESSIONS_FILE")
+check "turns = 0 for no assistants" "$(echo "$RECORD23" | jq '.turns')" "0"
+check "total_tokens = 0 for no assistants" "$(echo "$RECORD23" | jq '.total_tokens')" "0"
+check "total_cost = 0 for no assistants" "$(echo "$RECORD23" | jq '.total_cost_usd')" "0"
+check "models empty for no assistants" "$(echo "$RECORD23" | jq '.models | length')" "0"
+rm -f "$USER_ONLY_FIXTURE" "$SESSIONS_FILE"
 
 # --- Summary ---
 echo
