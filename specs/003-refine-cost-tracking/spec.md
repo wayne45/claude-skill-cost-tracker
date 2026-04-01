@@ -2,7 +2,7 @@
 
 **Feature Branch**: `003-refine-cost-tracking`  
 **Created**: 2026-04-01  
-**Status**: Draft  
+**Status**: Planned  
 **Input**: User description: "Read the Claude source code (Rust) and COST-TRACKING.md to make the cost tracker skill more precise. Do not commit any files in rust folder."
 
 ## Background
